@@ -15,19 +15,16 @@ def parse_metrics_cell(cell: str) -> dict:
     except Exception:
         return {}
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 1) Load & filter out only finished submissions
 HERE = os.path.dirname(__file__)
 CSV  = os.path.join(HERE, "all_submissions.csv")
 df   = pd.read_csv(CSV)
 df   = df[df["Status"].str.lower() == "finished"].reset_index(drop=True)
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 2) Extract the metrics JSON into its own DataFrame
 metrics = df["Result File"].apply(parse_metrics_cell)
 mdf     = pd.json_normalize(metrics)
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 3) The axes of the radar
 METRIC_ORDER = [
     "Final Score",
@@ -38,7 +35,6 @@ METRIC_ORDER = [
     "Action F1",
 ]
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 4) Hardcode the GPT-4o baseline values
 baseline = {
     "Final Score": 0.2651,
@@ -49,14 +45,12 @@ baseline = {
     "Action F1":    0.3355,
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 5) Compute evenly‐spaced angles around the circle
 labels = METRIC_ORDER
 N      = len(labels)
 angles = np.linspace(0, 2*np.pi, N, endpoint=False).tolist()
 angles += angles[:1]  # close the loop
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 6) Derive submission IDs (or fall back to simple 1,2,3…)
 if "Submission #" in df.columns:
     subs = df["Submission #"].astype(str).tolist()
@@ -69,7 +63,6 @@ else:
 subs_rev = subs[::-1]
 mdf_rev  = mdf.iloc[::-1].reset_index(drop=True)
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 7) A LIGHT PASTEL PALETTE for max contrast
 pastel_colors = [
     "#66c2a5",  # mint green
@@ -80,7 +73,6 @@ pastel_colors = [
 ]
 color_cycle = cycle(pastel_colors)
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 8) Set up the figure
 fig, ax = plt.subplots(figsize=(8,8), subplot_kw=dict(polar=True))
 fig.patch.set_facecolor("white")
@@ -98,7 +90,6 @@ tick_labels = [f"{t:.2f}" for t in tick_locs]
 plt.yticks(tick_locs, tick_labels, color="gray", size=10)
 plt.ylim(0, tick_locs[-1])
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 9) Plot each submission trace
 for sid in subs_rev:
     idx   = subs_rev.index(sid)
@@ -130,10 +121,9 @@ ax.plot(
 )
 ax.fill(angles, bvals, color="black", alpha=0.07)
 
-# ──────────────────────────────────────────────────────────────────────────────
 # 11) Final touches
 plt.title(
-    "All Submissions vs. GPT-4o Baseline\n(most recent → first)",
+    "All Submissions vs. GPT-4o Baseline",
     size=14, y=1.10
 )
 plt.legend(
