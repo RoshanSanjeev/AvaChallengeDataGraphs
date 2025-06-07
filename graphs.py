@@ -1,60 +1,61 @@
- # graphs.py
-import json
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
+# combined_plot_rev.py
 
-CSV = "all_submissions.csv"   # <-- make sure this matches your filename
+import json, os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 
 def parse_metrics_cell(cell):
-    # each cell is like "[{'BLEU-4': ..., 'ROUGE-L': ..., ...}]"
-    # convert single-quotes to double-quotes so json.loads will parse
     try:
         arr = json.loads(cell.replace("'", '"'))
         return arr[0]
     except Exception:
         return {}
 
-def main():
-    # 1) load and filter
-    df = pd.read_csv(CSV)
-    df = df[df["Status"].str.lower() == "finished"].reset_index(drop=True)
+# load & keep only “Finished”
+HERE = os.path.dirname(__file__)
+CSV  = os.path.join(HERE, "all_submissions.csv")
+df   = pd.read_csv(CSV)
+df   = df[df["Status"].str.lower() == "finished"].reset_index(drop=True)
 
-    # 2) extract metrics dict from the JSON snippet
-    metrics = df["Result File"].apply(parse_metrics_cell)
-    mdf = pd.json_normalize(metrics)  # gives columns like BLEU-4, ROUGE-L, Timing F1, etc.
+# pull out their metrics JSON
+metrics = df["Result File"].apply(parse_metrics_cell)
+mdf     = pd.json_normalize(metrics)
 
-    # 3) build an x-axis of 1,2,3...
-    x = np.arange(1, len(df) + 1)
+# decide which metrics go on the x-axis
+METRIC_ORDER = [
+    "Final Score",
+    "BLEU-4",
+    "ROUGE-L",
+    "Timing F1",
+    "Timing AUC",
+    "Action F1",
+]
 
-    # 4) plot BLEU-4 by itself
-    plt.figure(figsize=(8, 3))
-    plt.plot(x, mdf["BLEU-4"], marker="o", linestyle="-", label="BLEU-4")
-    plt.title("BLEU-4 over Submissions")
-    plt.xlabel("Submission #")
-    plt.ylabel("BLEU-4 score")
-    plt.xticks(x[::2])           # show every 2 ticks
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
+# build a list from most‐recent → oldest
+n    = len(mdf)
+subs = list(range(n, 0, -1))  # e.g. [n, n-1, ..., 1]
 
-    # 5) plot all the other metrics together
-    plt.figure(figsize=(8, 4))
-    others = ["ROUGE-L", "Timing F1", "Timing AUC", "Action F1", "Final Score"]
-    markers = ["s", "^", "x", "d", "o"]
-    for name, mk in zip(others, markers):
-        if name in mdf:
-            plt.plot(x, mdf[name], marker=mk, linestyle="-", label=name)
+plt.figure(figsize=(10,6))
+cmap = plt.get_cmap("tab20")
 
-    plt.title("Other Metrics over Submissions")
-    plt.xlabel("Submission #")
-    plt.ylabel("Score")
-    plt.xticks(x[::2])
-    plt.legend(loc="best", ncol=2)
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
+# now iterate: i=0→ newest, i=1→2nd newest, ..., label as Sub 1, Sub 2, ...
+for i, sub in enumerate(subs):
+    scores = [mdf.loc[sub-1].get(m, np.nan) for m in METRIC_ORDER]
+    plt.plot(
+        METRIC_ORDER,
+        scores,
+        marker="o",
+        linestyle="-",
+        color=cmap(i % 20),
+        label=f"Sub {i+1}"
+    )
 
-    plt.show()
-
-
-if __name__ == "__main__":
-    main()
+plt.title("Submission Scores Across All Metrics")
+plt.xlabel("Metric")
+plt.ylabel("Score")
+plt.xticks(rotation=15)
+plt.grid(alpha=0.3)
+plt.legend(bbox_to_anchor=(1.02,1), loc="upper left")
+plt.tight_layout()
+plt.show()
