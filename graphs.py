@@ -100,7 +100,7 @@ plt.plot(
     label=BASELINE_NAME
 )
 
-plt.title("Submission Scores Across All Metrics  (most recent → left)")
+plt.title("VideoLlama3 Performance")
 plt.xlabel("Metric")
 plt.ylabel("Score")
 plt.xticks(rotation=15)
