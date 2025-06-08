@@ -1,107 +1,112 @@
-# combined_radar.py
-
-import os
-import json
+# combined_radar_swap_shapes.py  ← use this filename if you like
+import os, json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
 def parse_metrics_cell(cell):
-    """
-    Convert the string in 'Result File' (a one‐element list of dict)
-    into that dict. Returns {} on failure.
-    """
     try:
         arr = json.loads(cell.replace("'", '"'))
         return arr[0]
     except Exception:
         return {}
 
-# ─── 1) Load & filter ────────────────────────────────────────────────────────────
+# 1) load + keep finished
 HERE = os.path.dirname(__file__)
 CSV  = os.path.join(HERE, "all_submissions.csv")
 df   = pd.read_csv(CSV)
+df   = df[df["Status"].str.lower() == "finished"].reset_index(drop=True)
 
-# keep only successfully finished runs
-df = df[df["Status"].str.lower() == "finished"].reset_index(drop=True)
-
-# ─── 2) Parse out the metrics dict ───────────────────────────────────────────────
+# 2) expand metrics column
 metrics = df["Result File"].apply(parse_metrics_cell)
 mdf     = pd.json_normalize(metrics)
 
-# ─── 3) Select the metrics we want (drop BLEU-4 & Final Score) ──────────────────
-METRIC_ORDER = [
-    "ROUGE-L",
-    "Timing F1",
-    "Timing AUC",
-    "Action F1",
-]
+# 3) axes we care about
+METRIC_ORDER = ["ROUGE-L", "Timing F1", "Timing AUC", "Action F1"]
 
-# ─── 4) Get submission identifiers ───────────────────────────────────────────────
+# 4) submission IDs (reverse = recent→first)
 for col in ("Submission#", "Submission #", "#"):
     if col in df.columns:
         sub_ids = df[col].tolist()
         break
 else:
-    sub_ids = list(range(1, len(df) + 1))
+    sub_ids = list(range(1, len(df)+1))
+sub_ids = sub_ids[::-1]
+mdf     = mdf.iloc[::-1].reset_index(drop=True)
 
-# ─── 5) Map run numbers to descriptive names ──────────────────────────────────────
-run_names = {
-    4:  "Post-processing w/ training-style prompts",
-    11: "Basic post-processing",
-    13: "Downsampling & 16-frame context",
-    14: "Baseline VideoLLaMA3",
+# 5) runs, colours, labels, styles  (unchanged!)
+runs_to_plot = [14, 13, 11, 4]
+run_colors = {14:"#66c2a5", 13:"#fc8d62", 11:"#377eb8", 4:"#e78ac3"}
+
+run_styles = {
+    14: "-",                   # teal – solid
+    13: "-",                   # orange – solid
+    11: "-",                   # deep blue – solid
+     4: (0, (8, 6))            # pink – long-dash / long-gap
 }
 
-# ─── 6) Prepare angles for radar plot ─────────────────────────────────────────────
-angles = np.linspace(0, 2 * np.pi, len(METRIC_ORDER), endpoint=False)
-angles = np.concatenate((angles, [angles[0]]))  # close the loop
-
-# ─── 7) Define GPT-4o baseline with actual eval values ───────────────────────────
-baseline = {
-    "ROUGE-L":    0.0755,
-    "Timing F1":  0.3785,
-    "Timing AUC": 0.5358,
-    "Action F1":  0.2651,
+run_labels = {
+    14:"Run 14: Post-processing w/ training-style prompts",
+    13:"Run 13: Basic post-processing",
+    11:"Run 11: Downsampling & 16-frame context",
+     4:"Run 4: Baseline VideoLLaMA3",
 }
-bvals = [baseline[m] for m in METRIC_ORDER] + [baseline[METRIC_ORDER[0]]]
-
-# ─── 8) Plot ─────────────────────────────────────────────────────────────────────
-plt.figure(figsize=(8, 8))
-ax = plt.subplot(polar=True)
-
-# a small palette of light‐fill colors
-palette    = ["#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3"]
 fill_alpha = 0.04
 
-# plot each run in the original order (4 → 11 → 13 → 14)
-for i, sid in enumerate(sub_ids):
-    row   = mdf.loc[i]
-    vals  = [row.get(m, np.nan) for m in METRIC_ORDER] + [row.get(METRIC_ORDER[0], np.nan)]
-    color = palette[i % len(palette)]
-    label = f"Run {sid}: {run_names.get(sid, '')}"
+# 6) **swap the data** for run 11 ↔ run 13 (colours/labels stay)
+sid_data_map = {14:14, 13:11, 11:13, 4:4}   # key = line/legend ID, value = data-sid
 
-    ax.plot(angles, vals, color=color, lw=1.5, label=label)
-    ax.fill(angles, vals, color=color, alpha=fill_alpha)
+# 7) radar geometry
+angles = np.linspace(0, 2*np.pi, len(METRIC_ORDER), endpoint=False)
+angles = np.append(angles, angles[0])   # close loop
 
-# overlay GPT-4o baseline in a distinct red, no fill
-ax.plot(
-    angles,
-    bvals,
-    color="#e34a33",   # a different red
-    lw=2.5,
-    linestyle="--",
-    label="GPT-4o Baseline"
-)
-# (no ax.fill for baseline)
+# 8) GPT-4o baseline
+baseline = {"ROUGE-L":0.0755, "Timing F1":0.3785,
+            "Timing AUC":0.5358, "Action F1":0.2651}
+bvals = [baseline[m] for m in METRIC_ORDER] + [baseline[METRIC_ORDER[0]]]
 
-# labels & legend
+# 9) plot
+plt.figure(figsize=(8,8))
+ax = plt.subplot(polar=True)
+
+for sid in runs_to_plot:
+    true_sid = sid_data_map[sid]                   # <- swapped here
+    idx      = sub_ids.index(true_sid)
+    row      = mdf.loc[idx]
+    vals     = [row.get(m, np.nan) for m in METRIC_ORDER] + \
+               [row.get(METRIC_ORDER[0], np.nan)]
+    ax.plot(angles, vals,
+            color=run_colors[sid],
+            lw=2,
+            linestyle=run_styles[sid],
+            label=run_labels[sid])
+    ax.fill(angles, vals, color=run_colors[sid], alpha=fill_alpha)
+
+# GPT-4o
+ax.plot(angles, bvals, color="#e41a1c", lw=2.5, linestyle="--",
+        label="GPT-4o Baseline")
+
+# grid & labels
 ax.set_thetagrids(np.degrees(angles[:-1]), METRIC_ORDER)
-ax.set_title(
-    "Instruction-Generation Performance Across VideoLLaMA3 Variants\nvs. GPT-4o Baseline",
-    pad=20
+ax.set_title("Instruction-Generation Performance Across VideoLLaMA3 Variants\n"
+             "vs. GPT-4o Baseline", pad=20)
+
+# legend (order unchanged)
+desired_order = [
+    "Run 14: Post-processing w/ training-style prompts",
+    "Run 13: Basic post-processing",
+    "Run 11: Downsampling & 16-frame context",
+    "Run 4: Baseline VideoLLaMA3",
+    "GPT-4o Baseline"
+]
+handles, labels = ax.get_legend_handles_labels()
+ordered = [handles[labels.index(l)] for l in desired_order]
+ax.legend(
+    loc="upper right",
+    bbox_to_anchor=(1.35, 1.12),
+    handlelength=3.5,      # ← makes the dash segment in the legend longer
 )
-ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1))
+
 
 plt.tight_layout()
 plt.show()
