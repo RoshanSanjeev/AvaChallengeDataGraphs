@@ -13,18 +13,25 @@ def parse_metrics_cell(cell):
     except Exception:
         return {}
 
+
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', None)
 # 1) load + keep finished
-HERE = os.path.dirname(__file__)
-CSV  = os.path.join(HERE, "all_submissions.csv")
+# HERE = os.path.dirname()
+CSV  = os.path.join("all_submissions.csv")
 df   = pd.read_csv(CSV)
 df   = df[df["Status"].str.lower() == "finished"].reset_index(drop=True)
+
+print(df["Result File"])
 
 # 2) expand metrics column
 metrics = df["Result File"].apply(parse_metrics_cell)
 mdf     = pd.json_normalize(metrics)
+# mdf     = mdf.rename(columns={"Timing AUC": "Timing\nAUC"})  # <--- Insert here
+
 
 # 3) axes we care about
-METRIC_ORDER = ["ROUGE-L", "Timing F1", "Timing AUC", "Action F1"]
+METRIC_ORDER = ["ROUGE-L", "Timing F1", "Timing\nAUC", "Action F1"]
 
 # 4) submission IDs (reverse = recent→first)
 for col in ("Submission#", "Submission #", "#"):
@@ -48,10 +55,10 @@ run_styles   = {
 }
 
 run_labels = {
-    14: "Run 14: Post-processing w/ training-style prompts",
-    13: "Run 13: Basic post-processing",
-    11: "Run 11: Downsampling & 16-frame context",
-     4: "Run 4: VideoLLaMA3 Baseline",            # UPDATED
+    14: "PE",
+    13: "PP",
+    11: "DS",
+     4: "MB",            # UPDATED
 }
 fill_alpha = 0.04
 
@@ -64,7 +71,7 @@ angles = np.append(angles, angles[0])   # close loop
 
 # 8) GPT-4o baseline
 baseline = {"ROUGE-L":0.0755, "Timing F1":0.3785,
-            "Timing AUC":0.5358, "Action F1":0.2651}
+            "Timing\nAUC":0.5358, "Action F1":0.2651}
 bvals = [baseline[m] for m in METRIC_ORDER] + [baseline[METRIC_ORDER[0]]]
 
 # 9) plot
@@ -75,8 +82,9 @@ for sid in runs_to_plot:
     true_sid = sid_data_map[sid]                # swapped here
     idx      = sub_ids.index(true_sid)
     row      = mdf.loc[idx]
-    vals     = [row.get(m, np.nan) for m in METRIC_ORDER] + \
-               [row.get(METRIC_ORDER[0], np.nan)]
+    vals = [row.get(m.replace("\n", " "), np.nan) for m in METRIC_ORDER] + \
+       [row.get(METRIC_ORDER[0].replace("\n", " "), np.nan)]
+
 
     ax.plot(angles, vals,
             color=run_colors[sid],
@@ -87,20 +95,27 @@ for sid in runs_to_plot:
 
 # GPT-4o dashed baseline
 ax.plot(angles, bvals, color="#e41a1c", lw=2.5, linestyle="--",
-        label="GPT-4o Baseline")
+        label="GPT-4(Baseline)")
 
 # grid & labels
-ax.set_thetagrids(np.degrees(angles[:-1]), METRIC_ORDER)
-ax.set_title("Instruction-Generation Performance Across VideoLLaMA3 Variants\n"
-             "vs. GPT-4o Baseline", pad=20)
+ax.set_thetagrids(np.degrees(angles[:-1]), METRIC_ORDER, fontsize=24)
+angles_deg = np.degrees(angles[:-1])  # Get the angles in degrees
+
+for label, angle in zip(ax.get_xticklabels(), angles_deg):
+    # Adjust only if the angle is near 0 or 180 degrees (horizontal)
+    if abs(angle % 360) < 20 or abs((angle % 360) - 180) < 20:
+        label.set_y(label.get_position()[1] - 0.15)  # More padding for horizontal
+    else:
+        label.set_y(label.get_position()[1] - 0.08)
+ax.set_title("Instruction-Generation Performance Across Solutions", pad=50, fontsize= 30, fontweight='bold')
 
 # legend (just reorder, labels already correct)
 desired_order = [
-    "Run 14: Post-processing w/ training-style prompts",
-    "Run 13: Basic post-processing",
-    "Run 11: Downsampling & 16-frame context",
-    "Run 4: VideoLLaMA3 Baseline",               # UPDATED
-    "GPT-4o Baseline"
+    "PE",
+    "PP",
+    "DS",
+    "MB",               # UPDATED
+    "GPT-4(Baseline)"
 ]
 handles, labels = ax.get_legend_handles_labels()
 ordered_handles = [handles[labels.index(l)] for l in desired_order]
@@ -108,10 +123,18 @@ ordered_handles = [handles[labels.index(l)] for l in desired_order]
 ax.legend(
     ordered_handles,
     desired_order,
-    loc="upper right",
-    bbox_to_anchor=(1.35, 1.12),
-    handlelength=3.5       # makes the dashed segment in the legend longer
+    loc="upper left",                # Anchor legend's upper-left corner
+    bbox_to_anchor=(0.65, 0.25),     # Increase 1.05 to move further right
+    handlelength=3.5,
+    frameon=True,
+    fancybox=False,
+    fontsize=20
 )
+
+# Set solid white background for the legend
+legend = ax.get_legend()
+legend.get_frame().set_facecolor("white")
+# legend.set_facecolor("white")
 
 plt.tight_layout()
 plt.show()
